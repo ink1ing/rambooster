@@ -1,0 +1,22 @@
+## 2025-09-25
+
+- Feat: Initial project structure created.
+- Feat: Add Rust toolchain check script.
+- Feat: Configure CI with linting and testing.
+- Docs: Add LICENSE and README files.
+- Feat: Define MemStats and PressureLevel structs.
+- Feat: Implement reading memory statistics from the system.
+- Feat: Implement pressure level derivation logic.
+- Feat: Add `sysinfo` as a fallback for memory stats.
+- Feat: Implement listing process PIDs.
+- Feat: Implement getting process resource usage.
+- Refactor: Switched to `sysinfo` for all process information gathering.
+- Feat: Implement frontmost application detection on macOS.
+- Feat: Implement sorting and filtering for processes.
+- Feat: Define data structure for logging.
+- Feat: Implement JSONL log writing and daily rotation.
+- Feat: Add optional SQLite logging backend.
+- Feat: Implement SQLite event logging function.
+- Feat: Encapsulate `purge` command execution.
+- Feat: Add error handling for missing `purge` command.
+- Feat: Implement candidate process filtering logic.
