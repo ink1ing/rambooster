@@ -61,6 +61,27 @@ impl Default for InteractiveSession {
 }
 
 impl InteractiveSession {
+    fn create_process_blacklist() -> std::collections::HashSet<String> {
+        let mut blacklist = std::collections::HashSet::new();
+        // RAM Booster 自身进程
+        blacklist.insert("rb".to_string());
+        blacklist.insert("cli".to_string());
+        blacklist.insert("rambooster".to_string());
+
+        // 关键系统进程
+        blacklist.insert("kernel_task".to_string());
+        blacklist.insert("launchd".to_string());
+        blacklist.insert("WindowServer".to_string());
+        blacklist.insert("loginwindow".to_string());
+        blacklist.insert("Finder".to_string());
+        blacklist.insert("Dock".to_string());
+        blacklist.insert("SystemUIServer".to_string());
+        blacklist.insert("cfprefsd".to_string());
+        blacklist.insert("mds".to_string());
+        blacklist.insert("mdworker".to_string());
+
+        blacklist
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -200,17 +221,17 @@ impl InteractiveSession {
         println!("\x1b[38;5;196m██╔══██╗██╔══██║██║╚██╔╝██║\x1b[0m");
         println!("\x1b[38;5;196m██║  ██║██║  ██║██║ ╚═╝ ██║\x1b[0m");
         println!("\x1b[38;5;196m╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝\x1b[0m");
-        println!("\x1b[38;5;208m██████╗  ██████╗  ██████╗ ███████╗████████╗███████╗██████╗ \x1b[0m");
-        println!("\x1b[38;5;208m██╔══██╗██╔═══██╗██╔═══██╗██╔════╝╚══██╔══╝██╔════╝██╔══██╗\x1b[0m");
-        println!("\x1b[38;5;208m██████╔╝██║   ██║██║   ██║███████╗   ██║   █████╗  ██████╔╝\x1b[0m");
-        println!("\x1b[38;5;208m██╔══██╗██║   ██║██║   ██║╚════██║   ██║   ██╔══╝  ██╔══██╗\x1b[0m");
-        println!("\x1b[38;5;208m██████╔╝╚██████╔╝╚██████╔╝███████║   ██║   ███████╗██║  ██║\x1b[0m");
-        println!("\x1b[38;5;208m╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝\x1b[0m");
+        println!("\x1b[38;5;46m██████╗  ██████╗  ██████╗ ███████╗████████╗███████╗██████╗ \x1b[0m");
+        println!("\x1b[38;5;46m██╔══██╗██╔═══██╗██╔═══██╗██╔════╝╚══██╔══╝██╔════╝██╔══██╗\x1b[0m");
+        println!("\x1b[38;5;46m██████╔╝██║   ██║██║   ██║███████╗   ██║   █████╗  ██████╔╝\x1b[0m");
+        println!("\x1b[38;5;46m██╔══██╗██║   ██║██║   ██║╚════██║   ██║   ██╔══╝  ██╔══██╗\x1b[0m");
+        println!("\x1b[38;5;46m██████╔╝╚██████╔╝╚██████╔╝███████║   ██║   ███████╗██║  ██║\x1b[0m");
+        println!("\x1b[38;5;46m╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝\x1b[0m");
         println!();
         println!("\x1b[38;5;214m                  🦀 RUST POWERED 🦀\x1b[0m");
-        println!("\x1b[38;5;220m                   Performance++\x1b[0m");
-        println!("\x1b[38;5;226m                     Memory Safe\x1b[0m");
-        println!("\x1b[38;5;220m                     Zero-Cost++\x1b[0m");
+        println!("\x1b[38;5;46m                   Performance++\x1b[0m");
+        println!("\x1b[38;5;46m                     Memory Safe\x1b[0m");
+        println!("\x1b[38;5;46m                     Zero-Cost++\x1b[0m");
         println!("\x1b[38;5;214m                   github@ink1ing\x1b[0m");
         println!();
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -326,9 +347,34 @@ impl InteractiveSession {
 
             },
             Err(e) => {
-                println!("❌ 内存清理失败: {:?}", e);
-                if let crate::release::BoostError::Purge(crate::release::PurgeError::CommandNotFound) = e {
-                    println!("💡 请安装 Xcode Command Line Tools: xcode-select --install");
+                match &e {
+                    crate::release::BoostError::Purge(purge_error) => {
+                        match purge_error {
+                            crate::release::PurgeError::CommandNotFound => {
+                                println!("❌ 内存清理失败: purge 命令未找到");
+                                println!("💡 请安装 Xcode Command Line Tools: xcode-select --install");
+                            },
+                            crate::release::PurgeError::ExecutionFailed(status) => {
+                                let exit_code = status.code().unwrap_or(-1);
+                                match exit_code {
+                                    1 | 256 => {
+                                        println!("⚠️  purge命令执行受限，但其他功能正常");
+                                        println!("💡 建议运行 ./setup_sudo.sh 优化清理效果");
+                                    },
+                                    _ => {
+                                        println!("❌ 内存清理失败: purge命令执行失败 (退出码: {})", exit_code);
+                                        println!("💡 尝试手动运行: sudo /usr/sbin/purge");
+                                    }
+                                }
+                            },
+                            crate::release::PurgeError::IoError(io_error) => {
+                                println!("❌ 内存清理失败: I/O错误 - {}", io_error);
+                            }
+                        }
+                    },
+                    _ => {
+                        println!("❌ 内存清理失败: {:?}", e);
+                    }
                 }
             }
         }
@@ -350,7 +396,19 @@ impl InteractiveSession {
                 total_freed += result.delta_mb;
                 println!("✅ 第1轮释放: {} MB", result.delta_mb);
             },
-            Err(e) => println!("❌ 第1轮失败: {:?}", e),
+            Err(e) => {
+                if let crate::release::BoostError::Purge(crate::release::PurgeError::ExecutionFailed(status)) = &e {
+                    // Unix 状态码 256 对应退出码 1 (256 = 1 << 8)
+                    let exit_code = status.code().unwrap_or(-1);
+                    if exit_code == 1 || format!("{:?}", status).contains("256") {
+                        println!("⚠️  第1轮: purge受限，继续其他清理步骤");
+                    } else {
+                        println!("❌ 第1轮失败: 退出码 {}", exit_code);
+                    }
+                } else {
+                    println!("❌ 第1轮失败: {:?}", e);
+                }
+            },
         }
 
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -358,7 +416,9 @@ impl InteractiveSession {
         // 第二轮：进程清理
         println!("🔄 第2轮: 高内存进程清理");
         let processes = get_all_processes();
-        let candidates = get_candidate_processes(&processes, 200, &std::collections::HashSet::new(), &std::collections::HashSet::new());
+        // 使用黑名单避免终止RAM Booster自身和关键系统进程
+        let blacklist = Self::create_process_blacklist();
+        let candidates = get_candidate_processes(&processes, 200, &std::collections::HashSet::new(), &blacklist);
 
         let mut killed_count = 0;
         for process in candidates.iter().take(3) { // 最多终止3个高内存进程
@@ -382,7 +442,19 @@ impl InteractiveSession {
                 total_freed += result.delta_mb;
                 println!("✅ 第3轮释放: {} MB", result.delta_mb);
             },
-            Err(e) => println!("❌ 第3轮失败: {:?}", e),
+            Err(e) => {
+                if let crate::release::BoostError::Purge(crate::release::PurgeError::ExecutionFailed(status)) = &e {
+                    // Unix 状态码 256 对应退出码 1 (256 = 1 << 8)
+                    let exit_code = status.code().unwrap_or(-1);
+                    if exit_code == 1 || format!("{:?}", status).contains("256") {
+                        println!("⚠️  第3轮: purge受限，但进程清理已完成");
+                    } else {
+                        println!("❌ 第3轮失败: 退出码 {}", exit_code);
+                    }
+                } else {
+                    println!("❌ 第3轮失败: {:?}", e);
+                }
+            },
         }
 
         let end_stats = read_mem_stats()?;
@@ -507,7 +579,8 @@ impl InteractiveSession {
 
                 // 候选清理进程
                 println!("\n🎯 候选清理进程:");
-                let candidates = get_candidate_processes(&processes, 50, &std::collections::HashSet::new(), &std::collections::HashSet::new());
+                let blacklist = Self::create_process_blacklist();
+                let candidates = get_candidate_processes(&processes, 50, &std::collections::HashSet::new(), &blacklist);
                 if candidates.is_empty() {
                     println!("  无候选进程");
                 } else {

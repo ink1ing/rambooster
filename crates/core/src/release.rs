@@ -43,17 +43,36 @@ impl From<std::io::Error> for PurgeError {
 pub fn purge() -> Result<(Duration, ExitStatus), PurgeError> {
     let start = Instant::now();
 
-    // 首先尝试直接执行purge（某些系统配置可能允许）
+    // 首先检查 /usr/sbin/purge 是否存在
+    if !std::path::Path::new("/usr/sbin/purge").exists() {
+        return Err(PurgeError::CommandNotFound);
+    }
+
+    // 尝试直接执行purge（某些系统配置可能允许）
     let output = Command::new("/usr/sbin/purge").output();
 
     let final_output = match output {
         Ok(out) if out.status.success() => out,
-        _ => {
-            // 如果直接执行失败，使用sudo但不需要交互式密码
-            Command::new("sudo")
+        Ok(out) => {
+            // 直接执行失败，尝试使用sudo
+            let sudo_result = Command::new("sudo")
                 .arg("-n") // 非交互模式，如果需要密码会失败
                 .arg("/usr/sbin/purge")
-                .output()?
+                .output()?;
+
+            // 如果sudo也失败了，返回原始的直接执行结果
+            if !sudo_result.status.success() {
+                out
+            } else {
+                sudo_result
+            }
+        },
+        Err(e) => {
+            // 如果是文件不存在错误，可能是路径问题
+            if e.kind() == ErrorKind::NotFound {
+                return Err(PurgeError::CommandNotFound);
+            }
+            return Err(PurgeError::IoError(e));
         }
     };
 
