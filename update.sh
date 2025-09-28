@@ -64,6 +64,13 @@ update_from_github() {
     cp target/release/cli ~/.local/bin/rb
     chmod +x ~/.local/bin/rb
 
+    # 同时安装更新和卸载脚本到全局位置
+    echo "📦 安装管理脚本..."
+    cp update.sh ~/.local/bin/rb-update
+    cp uninstall.sh ~/.local/bin/rb-uninstall
+    chmod +x ~/.local/bin/rb-update
+    chmod +x ~/.local/bin/rb-uninstall
+
     # 清理临时文件
     cd /
     rm -rf "$temp_dir"
@@ -88,11 +95,14 @@ show_usage_tips() {
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo -e "${YELLOW}💡 使用提示:${NC}"
-    echo "• 运行: rb"
+    echo "• 运行程序: rb"
     echo "• 快速清理: rb boost"
     echo "• 查看状态: rb status"
     echo "• 查看帮助: rb --help"
-    echo "• 卸载程序: ./uninstall.sh"
+    echo ""
+    echo -e "${BLUE}🔧 管理命令 (可在任意目录运行):${NC}"
+    echo "• 更新程序: rb-update"
+    echo "• 卸载程序: rb-uninstall"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 

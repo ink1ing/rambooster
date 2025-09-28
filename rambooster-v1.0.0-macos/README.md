@@ -21,27 +21,24 @@
 - **🔐 免密操作**: 自动配置 sudo 权限
 - **📊 详细报告**: 多级别数据展示
 - **📝 操作日志**: 完整的清理历史记录
-- **🔄 全局更新**: `rb-update` 命令可在任意目录执行
-- **🗑️ 全局卸载**: `rb-uninstall` 命令彻底清理所有组件
 
 ## 🚀 快速开始
 
 ### 安装
 
 ```bash
-# 方式一：一键安装（推荐）
-git clone https://github.com/ink1ing/ram-booster.git
-cd ram-booster
-./setup_rb.sh  # 自动编译、安装并配置 PATH
+# 克隆项目
+git clone https://github.com/yourusername/rambooster.git
+cd rambooster
 
-# 方式二：手动构建
-git clone https://github.com/ink1ing/ram-booster.git
-cd ram-booster
+# 构建项目
 cargo build --release
-cp target/release/cli ~/.local/bin/rb
-cp update.sh ~/.local/bin/rb-update
-cp uninstall.sh ~/.local/bin/rb-uninstall
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc  # 或 ~/.bashrc
+
+# 设置权限（避免每次输入密码）
+./setup_sudo.sh
+
+# 运行安装脚本
+./setup_rb.sh
 ```
 
 ### 使用方法
@@ -53,25 +50,8 @@ rb
 # ⚡ 快速清理 - 一键执行 Killer 模式
 rb b
 
-# 📊 查看状态
-rb status
-
 # 📊 查看帮助
 rb --help
-```
-
-### 更新和卸载
-
-```bash
-# 🔄 更新到最新版本 (安装后可在任意目录运行)
-rb-update
-
-# 🗑️ 完全卸载 (安装后可在任意目录运行)
-rb-uninstall
-
-# 或者在项目目录内运行
-./update.sh
-./uninstall.sh
 ```
 
 ## 💪 为什么选择 RamBooster？
@@ -155,33 +135,6 @@ rb-uninstall
 
 ## 🔧 高级配置
 
-### 更新管理
-
-#### 🔄 自动更新功能
-```bash
-# 检查并更新到最新版本
-./update.sh
-
-# 更新过程包括：
-# 1. 自动备份当前版本
-# 2. 从 GitHub 拉取最新代码
-# 3. 编译并安装新版本
-# 4. 验证安装结果
-```
-
-#### 🗑️ 完全卸载
-```bash
-# 彻底移除 RAM Booster
-./uninstall.sh
-
-# 卸载内容包括：
-# • 主执行文件 (~/.local/bin/rb)
-# • 所有备份文件 (~/.local/bin/rb.backup.*)
-# • 缓存数据 (~/.cache/ram_booster)
-# • 配置文件 (~/.config/ram_booster)
-# • 日志文件 (~/Library/Logs/ram_booster)
-```
-
 ### 自定义清理策略
 编辑配置文件来自定义清理行为：
 ```rust
@@ -198,21 +151,6 @@ auto_terminate_threshold: 1024, // MB
 if [ $(rb status | grep "Available" | awk '{print $2}') -lt 2048 ]; then
     rb b  # 内存不足时自动清理
 fi
-```
-
-### 版本管理最佳实践
-```bash
-# 查看当前版本
-rb --version
-
-# 定期检查更新（建议每月）
-./update.sh
-
-# 重要项目前备份当前版本
-cp ~/.local/bin/rb ~/.local/bin/rb.backup.manual
-
-# 测试新版本后确认稳定性
-rb status && rb b  # 验证基本功能
 ```
 
 ## 🤝 贡献指南

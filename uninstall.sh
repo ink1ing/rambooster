@@ -24,6 +24,15 @@ check_installation() {
         found_files+=("~/.local/bin/rb")
     fi
 
+    # 检查全局管理脚本
+    if [ -f ~/.local/bin/rb-update ]; then
+        found_files+=("~/.local/bin/rb-update")
+    fi
+
+    if [ -f ~/.local/bin/rb-uninstall ]; then
+        found_files+=("~/.local/bin/rb-uninstall")
+    fi
+
     # 检查备份文件
     if ls ~/.local/bin/rb.backup.* >/dev/null 2>&1; then
         found_files+=("备份文件")
@@ -56,7 +65,8 @@ check_installation() {
 confirm_uninstall() {
     echo -e "${YELLOW}⚠️  警告: 这将完全移除 RAM Booster 及其所有数据${NC}"
     echo "包括:"
-    echo "  • 主执行文件"
+    echo "  • 主执行文件 (rb)"
+    echo "  • 全局管理脚本 (rb-update, rb-uninstall)"
     echo "  • 所有备份文件"
     echo "  • 日志和缓存数据"
     echo "  • 配置文件"
@@ -78,6 +88,17 @@ remove_executable() {
     if [ -f ~/.local/bin/rb ]; then
         rm -f ~/.local/bin/rb
         echo -e "${GREEN}✅ 已移除 ~/.local/bin/rb${NC}"
+    fi
+
+    # 移除全局管理脚本
+    if [ -f ~/.local/bin/rb-update ]; then
+        rm -f ~/.local/bin/rb-update
+        echo -e "${GREEN}✅ 已移除 ~/.local/bin/rb-update${NC}"
+    fi
+
+    if [ -f ~/.local/bin/rb-uninstall ]; then
+        rm -f ~/.local/bin/rb-uninstall
+        echo -e "${GREEN}✅ 已移除 ~/.local/bin/rb-uninstall${NC}"
     fi
 }
 
@@ -154,6 +175,14 @@ verify_uninstall() {
 
     if [ -f ~/.local/bin/rb ]; then
         remaining_files+=("~/.local/bin/rb")
+    fi
+
+    if [ -f ~/.local/bin/rb-update ]; then
+        remaining_files+=("~/.local/bin/rb-update")
+    fi
+
+    if [ -f ~/.local/bin/rb-uninstall ]; then
+        remaining_files+=("~/.local/bin/rb-uninstall")
     fi
 
     if [ -d ~/.cache/ram_booster ]; then

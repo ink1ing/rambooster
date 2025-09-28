@@ -234,6 +234,8 @@ impl InteractiveSession {
         println!("\x1b[38;5;46m                     Zero-Cost++\x1b[0m");
         println!("\x1b[38;5;214m                   github@ink1ing\x1b[0m");
         println!();
+        println!("\x1b[38;5;226m                    v1.0.0\x1b[0m");
+        println!();
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         println!("💡 输入 'b' 开始清理内存");
         println!("📊 输入 'status' 查看当前状态");

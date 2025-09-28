@@ -7,7 +7,7 @@ fn main() {
     // 检查是否有参数
     if args.len() > 1 && args[1] == "b" {
         // 直接执行清理
-        println!("🚀 RAM Booster - 直接清理模式");
+        println!("🚀 RAM Booster v1.0.0 - 直接清理模式");
         let mut session = InteractiveSession::new();
 
         println!("💀 使用Killer模式进行清理...");
