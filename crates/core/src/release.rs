@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::process::{Command, ExitStatus};
 use std::time::{Duration, Instant};
 use std::io::ErrorKind;
-use sysinfo::{System, Signal, Pid, ProcessRefreshKind, ProcessesToUpdate};
+use sysinfo::{System, Signal, Pid, ProcessesToUpdate};
 use crate::{MemStats, read_mem_stats};
 use serde::Serialize;
 
@@ -41,6 +41,10 @@ impl From<std::io::Error> for PurgeError {
 }
 
 pub fn purge() -> Result<(Duration, ExitStatus), PurgeError> {
+    purge_with_permission(false)
+}
+
+pub fn purge_with_permission(request_permission: bool) -> Result<(Duration, ExitStatus), PurgeError> {
     let start = Instant::now();
 
     // 首先检查 /usr/sbin/purge 是否存在
@@ -54,21 +58,34 @@ pub fn purge() -> Result<(Duration, ExitStatus), PurgeError> {
     let final_output = match output {
         Ok(out) if out.status.success() => out,
         Ok(out) => {
-            // 直接执行失败，尝试使用sudo
-            let sudo_result = Command::new("sudo")
-                .arg("-n") // 非交互模式，如果需要密码会失败
-                .arg("/usr/sbin/purge")
-                .output()?;
+            // 直接执行失败，根据参数决定是否请求权限
+            if request_permission {
+                println!("🔐 需要管理员权限来执行内存清理，请输入密码:");
+                let sudo_result = Command::new("sudo")
+                    .arg("/usr/sbin/purge")
+                    .status()?;
 
-            // 如果sudo也失败了，返回原始的直接执行结果
-            if !sudo_result.status.success() {
-                out
+                let duration = start.elapsed();
+                return if sudo_result.success() {
+                    Ok((duration, sudo_result))
+                } else {
+                    Err(PurgeError::ExecutionFailed(sudo_result))
+                };
             } else {
-                sudo_result
+                // 非交互模式，尝试无密码sudo
+                let sudo_result = Command::new("sudo")
+                    .arg("-n") // 非交互模式
+                    .arg("/usr/sbin/purge")
+                    .output()?;
+
+                if !sudo_result.status.success() {
+                    out
+                } else {
+                    sudo_result
+                }
             }
         },
         Err(e) => {
-            // 如果是文件不存在错误，可能是路径问题
             if e.kind() == ErrorKind::NotFound {
                 return Err(PurgeError::CommandNotFound);
             }
@@ -119,6 +136,45 @@ pub fn get_candidate_processes<'a>(
         })
         .collect()
 }
+pub fn check_sudo_permissions() -> Result<bool, std::io::Error> {
+    let output = Command::new("sudo")
+        .arg("-n")
+        .arg("true")
+        .output()?;
+
+    Ok(output.status.success())
+}
+
+pub fn setup_sudo_permissions() -> Result<bool, std::io::Error> {
+    println!("🔧 正在配置内存清理权限...");
+
+    // 尝试通过交互式sudo获取权限
+    let status = Command::new("sudo")
+        .arg("/usr/sbin/purge")
+        .status()?;
+
+    if status.success() {
+        println!("✅ 权限配置成功！");
+
+        // 检查是否可以设置无密码sudo规则
+        println!("💡 提示：您可以通过以下命令设置无密码权限以获得更好体验：");
+        println!("   echo \"$(whoami) ALL=(root) NOPASSWD: /usr/sbin/purge\" | sudo tee /etc/sudoers.d/rambooster");
+        println!("   sudo chmod 440 /etc/sudoers.d/rambooster");
+
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+pub fn get_permission_status() -> String {
+    match check_sudo_permissions() {
+        Ok(true) => "✅ 已配置管理员权限".to_string(),
+        Ok(false) => "❌ 需要配置管理员权限".to_string(),
+        Err(_) => "⚠️ 权限检查失败".to_string(),
+    }
+}
+
 pub fn terminate(pid: u32, force: bool) -> bool {
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);

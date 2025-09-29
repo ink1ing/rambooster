@@ -1,26 +1,86 @@
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use crate::config::Config;
 use crate::release::boost;
+use crate::hotkey::GlobalHotkey;
 use crate::{read_mem_stats, PressureLevel};
 
 pub struct Daemon {
     config: Config,
-    last_boost: Option<Instant>,
+    last_boost: Arc<Mutex<Option<Instant>>>,
+    hotkey: Option<GlobalHotkey>,
 }
 
 impl Daemon {
     pub fn new(config: Config) -> Self {
+        let hotkey = if config.hotkey.enabled {
+            Some(GlobalHotkey::new(config.hotkey.clone()))
+        } else {
+            None
+        };
+
         Self {
             config,
-            last_boost: None,
+            last_boost: Arc::new(Mutex::new(None)),
+            hotkey,
         }
     }
 
     pub fn run(&mut self) -> Result<(), String> {
         println!("Starting RAM Booster daemon...");
         println!("Monitoring memory pressure (throttle interval: {}s)", self.config.throttle_interval_seconds);
+
+        // Start hotkey monitoring if enabled
+        if let Some(hotkey) = &self.hotkey {
+            let last_boost = self.last_boost.clone();
+            let throttle_interval = self.config.throttle_interval_seconds;
+
+            if let Err(e) = hotkey.start_monitoring(move || {
+                println!("🎹 快捷键 Control+R 被按下，触发内存清理...");
+
+                // 检查throttle
+                let should_boost = {
+                    let last_boost_guard = last_boost.lock().unwrap();
+                    if let Some(last) = *last_boost_guard {
+                        let elapsed = last.elapsed();
+                        let throttle_duration = Duration::from_secs(throttle_interval);
+                        if elapsed < throttle_duration {
+                            let remaining = throttle_duration - elapsed;
+                            println!("⏱️  内存清理仍在冷却中，请等待 {:.1}s", remaining.as_secs_f32());
+                            false
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                };
+
+                if should_boost {
+                    match boost() {
+                        Ok(result) => {
+                            // 更新last_boost时间
+                            let mut last_boost_guard = last_boost.lock().unwrap();
+                            *last_boost_guard = Some(Instant::now());
+                            drop(last_boost_guard);
+
+                            println!("✅ 快捷键内存清理完成:");
+                            println!("   释放内存: {} MB", result.delta_mb);
+                            println!("   用时: {:.2}s", result.duration.as_secs_f32());
+                            println!("   可用内存: {} MB → {} MB", result.before.free_mb, result.after.free_mb);
+                        }
+                        Err(e) => {
+                            eprintln!("❌ 快捷键内存清理失败: {:?}", e);
+                        }
+                    }
+                }
+            }) {
+                eprintln!("警告: 全局快捷键启动失败: {}", e);
+                eprintln!("将继续运行内存压力监控，但快捷键功能不可用");
+            }
+        }
 
         // Start memory pressure monitoring thread
         let (tx, rx) = mpsc::channel();
@@ -53,7 +113,8 @@ impl Daemon {
         }
 
         // Check throttle interval
-        if let Some(last_boost) = self.last_boost {
+        let last_boost_guard = self.last_boost.lock().unwrap();
+        if let Some(last_boost) = *last_boost_guard {
             let elapsed = last_boost.elapsed();
             let throttle_duration = Duration::from_secs(self.config.throttle_interval_seconds);
             if elapsed < throttle_duration {
@@ -70,7 +131,10 @@ impl Daemon {
 
         match boost() {
             Ok(result) => {
-                self.last_boost = Some(Instant::now());
+                let mut last_boost_guard = self.last_boost.lock().unwrap();
+                *last_boost_guard = Some(Instant::now());
+                drop(last_boost_guard);
+
                 println!("Memory boost completed:");
                 println!("  Freed: {} MB in {:.2}s", result.delta_mb, result.duration.as_secs_f32());
                 println!("  Free memory: {} MB → {} MB", result.before.free_mb, result.after.free_mb);
@@ -204,7 +268,8 @@ mod tests {
         let config = Config::default();
         let daemon = Daemon::new(config.clone());
         assert_eq!(daemon.config.rss_threshold_mb, config.rss_threshold_mb);
-        assert!(daemon.last_boost.is_none());
+        let last_boost_guard = daemon.last_boost.lock().unwrap();
+        assert!(last_boost_guard.is_none());
     }
 
     #[test]
@@ -238,13 +303,16 @@ mod tests {
     fn test_throttle_logic() {
         let mut config = Config::default();
         config.throttle_interval_seconds = 1; // Short interval for testing
-        let mut daemon = Daemon::new(config);
+        let daemon = Daemon::new(config);
 
         // First boost should be allowed
         assert!(daemon.should_trigger_boost(&PressureLevel::Critical));
 
         // Simulate a boost just happened
-        daemon.last_boost = Some(std::time::Instant::now());
+        {
+            let mut last_boost_guard = daemon.last_boost.lock().unwrap();
+            *last_boost_guard = Some(std::time::Instant::now());
+        }
 
         // Immediate second boost should be throttled
         assert!(!daemon.should_trigger_boost(&PressureLevel::Critical));

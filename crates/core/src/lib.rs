@@ -6,6 +6,7 @@ pub mod config;
 pub mod daemon;
 pub mod security;
 pub mod interactive;
+pub mod hotkey;
 
 use serde::{Serialize, Deserialize};
 use std::mem;
@@ -60,6 +61,7 @@ fn derive_pressure_level(stats: &MemStats) -> PressureLevel {
 #[cfg(not(feature = "use-sysinfo"))]
 pub fn read_mem_stats() -> Result<MemStats, String> {
     unsafe {
+        #[allow(deprecated)]
         let host_port = libc::mach_host_self();
         if host_port == 0 { return Err("mach_host_self() returned 0".to_string()); }
 

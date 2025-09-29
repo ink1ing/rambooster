@@ -6,6 +6,8 @@ use rambo_core::log_entry::{read_log_events, LogEvent, cleanup_old_logs, clear_a
 use rambo_core::config::load_config;
 use rambo_core::daemon::{Daemon, install_launchd_agent, uninstall_launchd_agent};
 use rambo_core::security::{filter_safe_processes, require_confirmation};
+use rambo_core::hotkey::GlobalHotkey;
+use rambo_core::config::{save_config};
 use serde::Serialize;
 use chrono::Utc;
 use std::collections::HashSet;
@@ -47,8 +49,12 @@ enum Commands {
     Logs(LogsArgs),
     /// Run diagnostics to check for required tools and permissions
     Doctor,
+    /// Configure system permissions for memory cleaning
+    Setup,
     /// Run as a background daemon to monitor memory pressure
     Daemon(DaemonArgs),
+    /// Manage global hotkey settings
+    Hotkey(HotkeyArgs),
 }
 
 #[derive(Parser)]
@@ -113,6 +119,24 @@ struct DaemonArgs {
 }
 
 #[derive(Parser)]
+struct HotkeyArgs {
+    #[command(subcommand)]
+    action: HotkeyAction,
+}
+
+#[derive(Subcommand)]
+enum HotkeyAction {
+    /// Enable global hotkey (Control+R)
+    Enable,
+    /// Disable global hotkey
+    Disable,
+    /// Show current hotkey status
+    Status,
+    /// Test hotkey functionality and permissions
+    Test,
+}
+
+#[derive(Parser)]
 struct LogsArgs {
     #[command(subcommand)]
     action: LogsAction,
@@ -174,6 +198,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", json_string);
             } else {
                 print_status_human(&mem_stats, &top_processes);
+
+                // 首次使用提醒：如果快捷键未启用，提醒用户
+                if !config.hotkey.enabled {
+                    println!("\n💡 提示: 可使用 'rambo hotkey enable' 启用 Control+R 快捷键快速清理内存");
+                }
             }
         }
         Commands::Boost(args) => {
@@ -185,15 +214,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("{}", json_string);
                     } else {
                         print_boost_human(&boost_result);
+
+                        // 首次使用提醒：如果快捷键未启用，提醒用户
+                        if !config.hotkey.enabled {
+                            println!("\n🚀 功能提醒:");
+                            println!("   想要更快的内存清理体验？");
+                            println!("   使用 'rambo hotkey enable' 启用 Control+R 全局快捷键");
+                            println!("   然后运行 'rambo daemon --install' 实现后台监听");
+                        }
                     }
                 }
                 Err(e) => {
                     match e {
                         rambo_core::release::BoostError::Purge(rambo_core::release::PurgeError::CommandNotFound) => {
-                            eprintln!("Error: /usr/bin/purge command not found.");
+                            eprintln!("Error: /usr/sbin/purge command not found.");
                             eprintln!("Please install Xcode Command Line Tools and try again.");
                             eprintln!("You can install them by running: xcode-select --install");
                             std::process::exit(1);
+                        }
+                        rambo_core::release::BoostError::Purge(rambo_core::release::PurgeError::ExecutionFailed(status)) => {
+                            let exit_code = status.code().unwrap_or(-1);
+                            match exit_code {
+                                1 | 256 => {
+                                    println!("⚠️  内存清理需要管理员权限才能发挥最佳效果");
+                                    print!("🔐 是否现在配置权限？(y/N): ");
+                                    std::io::stdout().flush().unwrap();
+
+                                    let mut input = String::new();
+                                    if std::io::stdin().read_line(&mut input).is_ok() {
+                                        if input.trim().to_lowercase().starts_with('y') {
+                                            match rambo_core::release::setup_sudo_permissions() {
+                                                Ok(true) => {
+                                                    println!("🚀 权限配置成功！现在可以重新运行 boost 命令获得更好效果");
+                                                },
+                                                Ok(false) => {
+                                                    println!("⚠️  权限配置失败，将使用安全模式继续");
+                                                    println!("💡 您也可以手动运行以下命令配置权限:");
+                                                    println!("   sudo /usr/sbin/purge  # 一次性获取权限");
+                                                },
+                                                Err(e) => {
+                                                    println!("❌ 权限配置错误: {}", e);
+                                                }
+                                            }
+                                        } else {
+                                            println!("💡 您也可以后续手动运行以下命令配置权限:");
+                                            println!("   sudo /usr/sbin/purge  # 一次性获取权限");
+                                            println!("   或者配置永久权限(可选):");
+                                            println!("   echo \"$(whoami) ALL=(root) NOPASSWD: /usr/sbin/purge\" | sudo tee /etc/sudoers.d/rambooster");
+                                        }
+                                    }
+                                },
+                                _ => {
+                                    eprintln!("❌ 内存清理失败: purge命令执行失败 (退出码: {})", exit_code);
+                                    eprintln!("💡 尝试手动运行: sudo /usr/sbin/purge");
+                                }
+                            }
+                        }
+                        rambo_core::release::BoostError::Purge(rambo_core::release::PurgeError::IoError(io_error)) => {
+                            eprintln!("❌ 内存清理失败: I/O错误 - {}", io_error);
+                            eprintln!("💡 请检查系统状态并重试");
                         }
                         _ => {
                             return Err(format!("Boost failed: {:?}", e).into());
@@ -357,6 +436,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        Commands::Setup => {
+            println!("--- RAM Booster 权限配置 ---");
+            println!("🔧 正在检查当前权限状态...");
+
+            let status = rambo_core::release::get_permission_status();
+            println!("{}", status);
+
+            if !rambo_core::release::check_sudo_permissions().unwrap_or(false) {
+                println!("\n🔐 开始配置管理员权限...");
+                match rambo_core::release::setup_sudo_permissions() {
+                    Ok(true) => {
+                        println!("✅ 权限配置成功！现在可以使用完整的内存清理功能。");
+                    },
+                    Ok(false) => {
+                        println!("❌ 权限配置失败。请手动运行以下命令：");
+                        println!("   sudo /usr/sbin/purge");
+                    },
+                    Err(e) => {
+                        eprintln!("❌ 配置过程中出错: {}", e);
+                    }
+                }
+            } else {
+                println!("✅ 权限已正确配置，无需额外操作。");
+            }
+        }
         Commands::Doctor => {
             println!("--- RAM Booster Doctor ---");
 
@@ -384,7 +488,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("\n--- Permissions ---");
             check_permissions();
 
-            // 4. Check for launchd agent
+            // 4. Check sudo permissions for memory cleaning
+            println!("\n--- Memory Cleaning Permissions ---");
+            let permission_status = rambo_core::release::get_permission_status();
+            println!("{}", permission_status);
+            if !rambo_core::release::check_sudo_permissions().unwrap_or(false) {
+                println!("    ➔ Run 'rambo setup' to configure permissions");
+            }
+
+            // 5. Check hotkey configuration
+            println!("\n--- 全局快捷键状态 ---");
+            if config.hotkey.enabled {
+                println!("[✓] 全局快捷键: 已启用 (Control+R)");
+                if GlobalHotkey::check_accessibility_permission() {
+                    println!("[✓] 辅助功能权限: 已授权");
+                } else {
+                    println!("[✗] 辅助功能权限: 需要授权");
+                    println!("    ➔ 到「系统设置 > 隐私与安全性 > 辅助功能」中添加终端或RamBooster");
+                }
+            } else {
+                println!("[!] 全局快捷键: 未启用");
+                println!("    ➔ 使用 'rambo hotkey enable' 启用 Control+R 快捷键");
+            }
+
+            // 6. Check for launchd agent
             println!("\n--- LaunchAgent Status ---");
             check_launchd_agent_status();
             println!("\nDoctor check complete.");
@@ -428,13 +555,118 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        Commands::Hotkey(args) => {
+            match &args.action {
+                HotkeyAction::Enable => {
+                    let mut config = config.clone();
+                    config.hotkey.enabled = true;
+
+                    match save_config(&config) {
+                        Ok(()) => {
+                            println!("✅ 全局快捷键已启用");
+                            println!("🎹 组合键: Control+R");
+                            println!("💡 功能: 快速执行内存清理");
+                            println!("");
+                            println!("📋 重要提醒:");
+                            println!("   1. 需要在「系统设置 > 隐私与安全性 > 辅助功能」中授权");
+                            println!("   2. 运行 'rambo daemon' 或 'rambo daemon --install' 以启用后台监听");
+                            println!("   3. 使用 'rambo hotkey test' 测试权限和功能");
+                        }
+                        Err(e) => {
+                            eprintln!("❌ 保存配置失败: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                HotkeyAction::Disable => {
+                    let mut config = config.clone();
+                    config.hotkey.enabled = false;
+
+                    match save_config(&config) {
+                        Ok(()) => {
+                            println!("🛑 全局快捷键已禁用");
+                        }
+                        Err(e) => {
+                            eprintln!("❌ 保存配置失败: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                HotkeyAction::Status => {
+                    println!("--- 全局快捷键状态 ---");
+                    println!("启用状态: {}", if config.hotkey.enabled { "✅ 已启用" } else { "❌ 已禁用" });
+                    println!("快捷键组合: {}", config.hotkey.key_combination);
+                    println!("显示通知: {}", if config.hotkey.show_notification { "是" } else { "否" });
+
+                    if config.hotkey.enabled {
+                        println!("\n--- 权限检查 ---");
+                        if GlobalHotkey::check_accessibility_permission() {
+                            println!("辅助功能权限: ✅ 已授权");
+                        } else {
+                            println!("辅助功能权限: ❌ 需要授权");
+                            println!("请到「系统设置 > 隐私与安全性 > 辅助功能」中授权");
+                        }
+                    }
+                }
+                HotkeyAction::Test => {
+                    println!("--- 快捷键功能测试 ---");
+
+                    if !config.hotkey.enabled {
+                        println!("❌ 快捷键功能未启用");
+                        println!("使用 'rambo hotkey enable' 启用功能");
+                        return Ok(());
+                    }
+
+                    println!("🔍 检查辅助功能权限...");
+                    if !GlobalHotkey::check_accessibility_permission() {
+                        println!("❌ 缺少辅助功能权限");
+                        GlobalHotkey::request_accessibility_permission()?;
+                        return Ok(());
+                    }
+
+                    println!("✅ 权限检查通过");
+                    println!("🎹 创建快捷键监听器...");
+
+                    let hotkey = GlobalHotkey::new(config.hotkey.clone());
+                    println!("📢 测试模式启动 - 按 Control+R 测试功能 (30秒后自动退出)");
+
+                    let test_result = std::sync::Arc::new(std::sync::Mutex::new(false));
+                    let test_result_clone = test_result.clone();
+
+                    if let Err(e) = hotkey.start_monitoring(move || {
+                        println!("🎉 快捷键测试成功！Control+R 被正确捕获");
+                        let mut result = test_result_clone.lock().unwrap();
+                        *result = true;
+                    }) {
+                        eprintln!("❌ 快捷键监听启动失败: {}", e);
+                        return Ok(());
+                    }
+
+                    // 等待30秒或直到测试成功
+                    for i in 0..30 {
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                        let result = test_result.lock().unwrap();
+                        if *result {
+                            println!("✅ 快捷键功能测试完成！");
+                            return Ok(());
+                        }
+                        if i % 5 == 4 {
+                            println!("⏳ 等待按键测试... ({}/30秒)", i + 1);
+                        }
+                    }
+
+                    println!("⏰ 测试超时，请检查:");
+                    println!("   1. 是否按了正确的组合键 Control+R");
+                    println!("   2. 是否有其他应用拦截了快捷键");
+                }
+            }
+        }
     }
 
     Ok(())
 }
 
 fn check_permissions() {
-    use std::process::Command;
 
     // Check if we can read memory stats
     match rambo_core::read_mem_stats() {

@@ -86,6 +86,7 @@ impl InteractiveSession {
         Self::default()
     }
 
+    #[allow(dead_code)]
     fn show_progress_bar(&self, step: usize, total: usize, message: &str) {
         match self.visualization_level {
             VisualizationLevel::Minimal => {
@@ -234,7 +235,7 @@ impl InteractiveSession {
         println!("\x1b[38;5;46m                     Zero-Cost++\x1b[0m");
         println!("\x1b[38;5;214m                   github@ink1ing\x1b[0m");
         println!();
-        println!("\x1b[38;5;226m                    v1.0.0\x1b[0m");
+        println!("\x1b[38;5;226m                    v1.2.0\x1b[0m");
         println!();
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         println!("💡 输入 'b' 开始清理内存");
@@ -360,8 +361,31 @@ impl InteractiveSession {
                                 let exit_code = status.code().unwrap_or(-1);
                                 match exit_code {
                                     1 | 256 => {
-                                        println!("⚠️  purge命令执行受限，但其他功能正常");
-                                        println!("💡 建议运行 ./setup_sudo.sh 优化清理效果");
+                                        println!("⚠️  内存清理需要管理员权限才能发挥最佳效果");
+                                        print!("🔐 是否现在配置权限？(y/N): ");
+                                        std::io::stdout().flush().unwrap();
+
+                                        let mut input = String::new();
+                                        if std::io::stdin().read_line(&mut input).is_ok() {
+                                            if input.trim().to_lowercase().starts_with('y') {
+                                                match crate::release::setup_sudo_permissions() {
+                                                    Ok(true) => {
+                                                        println!("🚀 权限配置成功！再次运行 boost 命令可获得更好效果");
+                                                    },
+                                                    Ok(false) => {
+                                                        println!("⚠️  权限配置失败，将使用安全模式继续");
+                                                    },
+                                                    Err(e) => {
+                                                        println!("❌ 权限配置错误: {}", e);
+                                                    }
+                                                }
+                                            } else {
+                                                println!("💡 您也可以后续手动运行以下命令配置权限:");
+                                                println!("   sudo /usr/sbin/purge  # 一次性获取权限");
+                                                println!("   或者配置永久权限(可选):");
+                                                println!("   echo \"$(whoami) ALL=(root) NOPASSWD: /usr/sbin/purge\" | sudo tee /etc/sudoers.d/rambooster");
+                                            }
+                                        }
                                     },
                                     _ => {
                                         println!("❌ 内存清理失败: purge命令执行失败 (退出码: {})", exit_code);
@@ -403,12 +427,12 @@ impl InteractiveSession {
                     // Unix 状态码 256 对应退出码 1 (256 = 1 << 8)
                     let exit_code = status.code().unwrap_or(-1);
                     if exit_code == 1 || format!("{:?}", status).contains("256") {
-                        println!("⚠️  第1轮: purge受限，继续其他清理步骤");
+                        println!("⚠️  第1轮: 权限受限，继续其他清理步骤(使用 'sudo /usr/sbin/purge' 可获取更好效果)");
                     } else {
-                        println!("❌ 第1轮失败: 退出码 {}", exit_code);
+                        println!("❌ 第1轮失败: 退出码 {} - 建议使用 'sudo /usr/sbin/purge' 获取权限", exit_code);
                     }
                 } else {
-                    println!("❌ 第1轮失败: {:?}", e);
+                    println!("❌ 第1轮失败: {:?} - 建议配置管理员权限", e);
                 }
             },
         }
@@ -449,12 +473,12 @@ impl InteractiveSession {
                     // Unix 状态码 256 对应退出码 1 (256 = 1 << 8)
                     let exit_code = status.code().unwrap_or(-1);
                     if exit_code == 1 || format!("{:?}", status).contains("256") {
-                        println!("⚠️  第3轮: purge受限，但进程清理已完成");
+                        println!("⚠️  第3轮: 权限受限，但进程清理已完成(使用 'sudo /usr/sbin/purge' 可获取更好效果)");
                     } else {
-                        println!("❌ 第3轮失败: 退出码 {}", exit_code);
+                        println!("❌ 第3轮失败: 退出码 {} - 建议使用 'sudo /usr/sbin/purge' 获取权限", exit_code);
                     }
                 } else {
-                    println!("❌ 第3轮失败: {:?}", e);
+                    println!("❌ 第3轮失败: {:?} - 建议配置管理员权限", e);
                 }
             },
         }

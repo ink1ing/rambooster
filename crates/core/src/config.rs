@@ -11,6 +11,24 @@ pub struct Config {
     pub throttle_interval_seconds: u64,
     pub whitelist_processes: Vec<String>,
     pub blacklist_processes: Vec<String>,
+    pub hotkey: HotkeyConfig,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct HotkeyConfig {
+    pub enabled: bool,
+    pub key_combination: String,
+    pub show_notification: bool,
+}
+
+impl Default for HotkeyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            key_combination: "Control+R".to_string(),
+            show_notification: true,
+        }
+    }
 }
 
 impl Default for Config {
@@ -27,6 +45,7 @@ impl Default for Config {
                 "WindowServer".to_string(),
             ],
             blacklist_processes: vec![],
+            hotkey: HotkeyConfig::default(),
         }
     }
 }
@@ -89,6 +108,15 @@ pub fn load_config() -> Result<Config, String> {
 
     if let Ok(val) = env::var("RAMBO_BLACKLIST_PROCESSES") {
         config.blacklist_processes = val.split(',').map(|s| s.trim().to_string()).collect();
+    }
+
+    if let Ok(val) = env::var("RAMBO_HOTKEY_ENABLED") {
+        config.hotkey.enabled = val.parse()
+            .map_err(|_| "Invalid RAMBO_HOTKEY_ENABLED value")?;
+    }
+
+    if let Ok(val) = env::var("RAMBO_HOTKEY_COMBINATION") {
+        config.hotkey.key_combination = val;
     }
 
     Ok(config)
