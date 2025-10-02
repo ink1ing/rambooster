@@ -7,6 +7,7 @@ pub mod daemon;
 pub mod security;
 pub mod interactive;
 pub mod hotkey;
+pub mod version;
 
 use serde::{Serialize, Deserialize};
 use std::mem;

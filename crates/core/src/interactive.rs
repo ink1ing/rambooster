@@ -11,6 +11,7 @@ use crate::release::{boost, BoostResult};
 use crate::{read_mem_stats, MemStats};
 use crate::processes::{get_all_processes, sort_and_take_processes};
 use crate::hotkey::GlobalHotkey;
+use crate::version::{check_for_updates, perform_update};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BoostLevel {
@@ -106,6 +107,7 @@ impl InteractiveTerminal {
             Print("   /status   - 显示内存状态\n"),
             Print("   /hotkey   - 快捷键管理\n"),
             Print("   /daemon   - 后台服务管理\n"),
+            Print("   /update   - 检查和更新版本\n"),
             Print("   /help     - 显示帮助\n"),
             Print("   /exit     - 退出 (或按 Ctrl+C)\n"),
             Print("\n"),
@@ -182,6 +184,7 @@ impl InteractiveTerminal {
             "/status" => self.show_status()?,
             "/hotkey" => self.show_hotkey_info()?,
             "/daemon" => self.show_daemon_info()?,
+            "/update" => self.show_update_interface()?,
             "/help" => self.show_help()?,
             "/exit" => {
                 self.running = false;
@@ -319,6 +322,7 @@ impl InteractiveTerminal {
         println!("   /status   - 显示内存状态");
         println!("   /hotkey   - 快捷键管理");
         println!("   /daemon   - 后台服务管理");
+        println!("   /update   - 检查和更新版本");
         println!("   /help     - 显示此帮助");
         println!("   /exit     - 退出程序");
         println!();
@@ -353,6 +357,109 @@ impl InteractiveTerminal {
         println!("   固定内存: {} MB", stats.wired_mb);
         println!("   压缩内存: {} MB", stats.compressed_mb);
         println!("   内存压力: {:?}", stats.pressure);
+        Ok(())
+    }
+
+    fn show_update_interface(&self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("🔄 版本更新管理:");
+        println!("   [1] 检查更新");
+        println!("   [2] 执行更新");
+        println!("   [ESC] 返回");
+        println!();
+        print!("请选择操作 (1-2): ");
+
+        loop {
+            if let Event::Key(key_event) = event::read()? {
+                match key_event.code {
+                    KeyCode::Char('1') => {
+                        println!("1\n");
+                        self.check_version_status()?;
+                        break;
+                    }
+                    KeyCode::Char('2') => {
+                        println!("2\n");
+                        self.execute_update()?;
+                        break;
+                    }
+                    KeyCode::Esc => {
+                        println!("已取消");
+                        break;
+                    }
+                    _ => {
+                        // 忽略其他按键
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn check_version_status(&self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("🔍 正在检查版本信息...");
+
+        match check_for_updates() {
+            Ok(version_info) => {
+                println!("📊 版本信息:");
+                println!("   当前版本: {}", version_info.current);
+
+                if let Some(latest) = &version_info.latest {
+                    println!("   最新版本: {}", latest);
+
+                    if version_info.update_available {
+                        println!("✨ 发现新版本可用！");
+                        println!("💡 使用 /update 选择选项2进行更新");
+                    } else {
+                        println!("✅ 您已经是最新版本！");
+                    }
+                } else {
+                    println!("❌ 无法检查远程版本（可能是网络问题）");
+                }
+            }
+            Err(e) => {
+                println!("❌ 检查更新失败: {}", e);
+            }
+        }
+        Ok(())
+    }
+
+    fn execute_update(&self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("🚀 开始执行更新...");
+        println!("⚠️  更新将替换当前程序文件");
+        println!("   [Y] 确认更新");
+        println!("   [N] 取消更新");
+        print!("是否继续？(Y/N): ");
+
+        loop {
+            if let Event::Key(key_event) = event::read()? {
+                match key_event.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        println!("Y\n");
+                        println!("🔄 正在执行更新...");
+
+                        match perform_update(false) {
+                            Ok(()) => {
+                                println!("🎉 更新完成！");
+                                println!("💡 您可能需要重新启动终端或重新加载路径");
+                                println!("🔄 建议退出当前会话并重新启动 RAM Booster");
+                            }
+                            Err(e) => {
+                                println!("❌ 更新失败: {}", e);
+                                println!("💡 您可以尝试手动运行更新脚本或从 GitHub 下载最新版本");
+                            }
+                        }
+                        break;
+                    }
+                    KeyCode::Char('n') | KeyCode::Char('N') => {
+                        println!("N");
+                        println!("❌ 更新已取消");
+                        break;
+                    }
+                    _ => {
+                        // 忽略其他按键
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }

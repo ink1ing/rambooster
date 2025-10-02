@@ -9,6 +9,7 @@ use rambo_core::security::{filter_safe_processes, require_confirmation};
 use rambo_core::hotkey::GlobalHotkey;
 use rambo_core::config::{save_config};
 use rambo_core::interactive::{InteractiveTerminal, run_direct_boost};
+use rambo_core::version::{check_for_updates, perform_update, cleanup_old_versions};
 use serde::Serialize;
 use chrono::Utc;
 use std::collections::HashSet;
@@ -60,6 +61,8 @@ enum Commands {
     Daemon(DaemonArgs),
     /// Manage global hotkey settings
     Hotkey(HotkeyArgs),
+    /// Update RAM Booster to latest version
+    Update(UpdateArgs),
 }
 
 #[derive(Parser)]
@@ -127,6 +130,21 @@ struct DaemonArgs {
 struct HotkeyArgs {
     #[command(subcommand)]
     action: HotkeyAction,
+}
+
+#[derive(Parser)]
+struct UpdateArgs {
+    /// Check for updates without installing
+    #[arg(long)]
+    check: bool,
+
+    /// Force update even if already up to date
+    #[arg(long)]
+    force: bool,
+
+    /// Skip confirmation prompts
+    #[arg(long, short)]
+    yes: bool,
 }
 
 #[derive(Subcommand)]
@@ -678,6 +696,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        Commands::Update(args) => {
+            handle_update_command(args)?;
+        }
         }
     }
 
@@ -863,4 +884,110 @@ fn print_status_human(mem_stats: &MemStats, processes: &[rambo_core::processes::
         };
         println!("{:<6} {:<25} {:>10}", p.pid, name, p.rss_mb);
     }
+}
+
+fn handle_update_command(args: &UpdateArgs) -> Result<(), Box<dyn std::error::Error>> {
+    if args.check {
+        // 仅检查更新
+        println!("🔍 检查更新中...");
+
+        match check_for_updates() {
+            Ok(version_info) => {
+                println!("📊 版本信息:");
+                println!("   当前版本: {}", version_info.current);
+
+                if let Some(latest) = &version_info.latest {
+                    println!("   最新版本: {}", latest);
+
+                    if version_info.update_available {
+                        println!("✨ 发现新版本可用！");
+                        println!("💡 运行 'rb update' 或 'rambo update' 进行更新");
+                    } else {
+                        println!("✅ 您已经是最新版本！");
+                    }
+                } else {
+                    println!("❌ 无法检查远程版本（可能是网络问题）");
+                }
+            }
+            Err(e) => {
+                println!("❌ 检查更新失败: {}", e);
+            }
+        }
+        return Ok(());
+    }
+
+    // 执行更新
+    println!("🚀 RAM Booster 更新程序");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    // 检查当前版本和最新版本
+    match check_for_updates() {
+        Ok(version_info) => {
+            println!("📊 当前版本: {}", version_info.current);
+
+            if let Some(latest) = &version_info.latest {
+                println!("📊 最新版本: {}", latest);
+
+                if !version_info.update_available && !args.force {
+                    println!("✅ 您已经是最新版本！");
+                    if !args.yes {
+                        print!("是否仍要强制更新？(y/N): ");
+                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input).unwrap();
+                        if !input.trim().to_lowercase().starts_with('y') {
+                            println!("更新已取消");
+                            return Ok(());
+                        }
+                    } else {
+                        println!("更新已取消（使用 --force 强制更新）");
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("⚠️  无法检查远程版本: {}", e);
+            if !args.force && !args.yes {
+                print!("是否继续更新？(y/N): ");
+                std::io::Write::flush(&mut std::io::stdout()).unwrap();
+
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input).unwrap();
+                if !input.trim().to_lowercase().starts_with('y') {
+                    println!("更新已取消");
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // 确认更新
+    if !args.yes {
+        print!("⚠️  更新将替换当前程序文件，是否继续？(y/N): ");
+        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        if !input.trim().to_lowercase().starts_with('y') {
+            println!("更新已取消");
+            return Ok(());
+        }
+    }
+
+    // 执行更新
+    match perform_update(args.force) {
+        Ok(()) => {
+            println!("🎉 更新完成！");
+            println!("💡 您可能需要重新启动终端或重新加载路径");
+        }
+        Err(e) => {
+            println!("❌ 更新失败: {}", e);
+            println!("💡 您可以尝试手动运行更新脚本或从 GitHub 下载最新版本");
+            std::process::exit(1);
+        }
+    }
+
+    Ok(())
 }
