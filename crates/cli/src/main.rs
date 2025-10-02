@@ -8,6 +8,7 @@ use rambo_core::daemon::{Daemon, install_launchd_agent, uninstall_launchd_agent}
 use rambo_core::security::{filter_safe_processes, require_confirmation};
 use rambo_core::hotkey::GlobalHotkey;
 use rambo_core::config::{save_config};
+use rambo_core::interactive::{InteractiveTerminal, run_direct_boost};
 use serde::Serialize;
 use chrono::Utc;
 use std::collections::HashSet;
@@ -18,7 +19,11 @@ use std::io::Write;
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
+
+    /// Quick boost mode - execute medium intensity memory cleaning directly
+    #[arg(short = 'b', long)]
+    boost: bool,
 
     /// Override RSS threshold in MB
     #[arg(long, global = true)]
@@ -183,7 +188,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.enable_process_termination = enable;
     }
 
+    // Handle interactive mode and quick boost
+    if cli.boost {
+        // Quick boost mode: rb -b or rb --boost
+        return Ok(run_direct_boost()?);
+    }
+
     match &cli.command {
+        None => {
+            // No subcommand provided: start interactive terminal
+            let mut interactive = InteractiveTerminal::new(config);
+            return Ok(interactive.run()?);
+        }
+        Some(command) => match command {
         Commands::Status(args) => {
             let mem_stats = read_mem_stats()?;
             let processes = get_all_processes();
@@ -660,6 +677,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("   2. 是否有其他应用拦截了快捷键");
                 }
             }
+        }
         }
     }
 
